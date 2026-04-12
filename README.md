@@ -35,7 +35,7 @@ Yichen Liu<sup>2</sup>, Xin Gao<sup>2</sup>, Cunjian Chen<sup>3</sup>, Shilei We
 ---
 
 ## 🔥 Updates
-- 2026.04: Code and benchmark data are under internal review. Please stay tuned!
+- 2026.04: Code are under internal review. Please stay tuned!
 - 2026.04: The technical report of OmniShow is released!
 
 
