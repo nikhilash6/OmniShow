@@ -35,7 +35,7 @@ Yichen Liu<sup>2</sup>, Xin Gao<sup>2</sup>, Cunjian Chen<sup>3</sup>, Shilei We
 ---
 
 ## 🔥 Updates
-- 2026.04: Code is under internal review. Please stay tuned!
+- 2026.04: Code is still under internal review. Please stay tuned!
 - 2026.04: The technical report of OmniShow is released!
 
 
@@ -54,7 +54,7 @@ applications, such as audio-driven avatars, object swapping, and video remixing.
 
 We propose **OmniShow**, a video generation model that unifies text, reference image, audio, and pose conditions for HOIVG, which consists of:
 
-1. **Unified Channel-wise Conditioning** efficiently inject and pose cues via unified channel concatenation. It augments noisy video tokens with pseudo-frames, which are supervised by a reference reconstruction loss to preserve semantic details.
+1. **Unified Channel-wise Conditioning** effectively injects reference image and pose cues via unified channel concatenation. It augments noisy video tokens with pseudo-frames, which are supervised by a reference reconstruction loss to preserve semantic details.
 2. **Gated Local-Context Attention** ensures precise audio-visual synchronization. It packs audio features with sufficient contextual information and injects them via masked attention to align video frames with corresponding audio segments, followed by adaptive gating to stabilize early training.
 3. **Decoupled-Then-Joint Training** makes the efficient utilization of heterogeneous datasets possible. We first train specialized R2V and A2V models on separate sub-task datasets, then fuse them via weight interpolation, followed by joint fine-tuning to unify multimodal capabilities.
 
