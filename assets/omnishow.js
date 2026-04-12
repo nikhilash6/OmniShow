@@ -33,6 +33,75 @@
     }
   };
 
+  const setDeferredVideoSource = (video, src, type) => {
+    if (!video || !src) return;
+    video.dataset.src = src;
+    video.dataset.srcType = type || "video/mp4";
+    if (video.dataset.srcLoaded !== "true") video.dataset.srcLoaded = "false";
+  };
+
+  const prepareDeferredVideoElement = (video) => {
+    if (!video || video.dataset.deferredPrepared === "true") return;
+    if (video.dataset) video.dataset.deferredPrepared = "true";
+
+    const source = video.querySelector("source[src]");
+    const sourceSrc = source && source.getAttribute("src");
+    const sourceType = source && source.getAttribute("type");
+    if (!sourceSrc) return;
+
+    setDeferredVideoSource(video, sourceSrc, sourceType || "video/mp4");
+
+    if (video.currentSrc || video.readyState > 0) {
+      video.dataset.srcLoaded = "true";
+      return;
+    }
+
+    source.removeAttribute("src");
+    try {
+      video.load();
+    } catch (_) {}
+  };
+
+  const ensureVideoSourceLoaded = (video) => {
+    if (!video) return;
+    if (video.dataset && video.dataset.deferredPrepared !== "true") {
+      prepareDeferredVideoElement(video);
+    }
+    if (video.dataset && video.dataset.srcLoaded === "true") return;
+
+    const src = video.dataset ? video.dataset.src || "" : "";
+    if (!src) return;
+
+    let source = video.querySelector("source");
+    if (!source) {
+      source = document.createElement("source");
+      video.appendChild(source);
+    }
+    source.src = src;
+    source.type = (video.dataset && video.dataset.srcType) || "video/mp4";
+
+    try {
+      video.load();
+    } catch (_) {}
+    if (video.dataset) video.dataset.srcLoaded = "true";
+  };
+
+  const playVideoSafely = (video) => {
+    if (!video) return;
+    ensureVideoSourceLoaded(video);
+    try {
+      const p = video.play();
+      if (p && typeof p.catch === "function") p.catch(() => {});
+    } catch (_) {}
+  };
+
+  const pauseVideoSafely = (video) => {
+    if (!video) return;
+    try {
+      video.pause();
+    } catch (_) {}
+  };
+
   const formatCaseLabel = (caseName) => {
     const raw = String(caseName || "");
     const m = raw.match(/case-(\d+)/i);
@@ -158,10 +227,7 @@
     video.loop = true;
     video.playsInline = true;
     video.preload = "none";
-    const source = document.createElement("source");
-    source.src = resolveUrl(caseBase, poseSrc);
-    source.type = "video/mp4";
-    video.appendChild(source);
+    setDeferredVideoSource(video, resolveUrl(caseBase, poseSrc), "video/mp4");
     wrap.appendChild(video);
     card.appendChild(label);
     card.appendChild(wrap);
@@ -187,10 +253,7 @@
     video.loop = true;
     video.playsInline = true;
     video.preload = "none";
-    const source = document.createElement("source");
-    source.src = resolveUrl(caseBase, output.src || "");
-    source.type = "video/mp4";
-    video.appendChild(source);
+    setDeferredVideoSource(video, resolveUrl(caseBase, output.src || ""), "video/mp4");
     wrap.appendChild(badge);
     wrap.appendChild(video);
     card.appendChild(label);
@@ -219,10 +282,7 @@
           overlay.loop = true;
           overlay.playsInline = true;
           overlay.preload = "none";
-          const s = document.createElement("source");
-          s.src = poseUrl;
-          s.type = "video/mp4";
-          overlay.appendChild(s);
+          setDeferredVideoSource(overlay, poseUrl, "video/mp4");
           wrap.appendChild(overlay);
         }
 
@@ -286,30 +346,24 @@
 
     const playOverlays = () => {
       block.classList.add("pose-overlay-active");
+      ensureVideoSourceLoaded(poseVideoEl);
       syncOverlays();
       try {
-        const pp = poseVideoEl.play();
-        if (pp && typeof pp.catch === "function") pp.catch(() => {});
+        playVideoSafely(poseVideoEl);
       } catch (_) {}
       pairs.forEach((p) => {
         if (!p || !p.overlay) return;
-        try {
-          p.overlay.load();
-        } catch (_) {}
-        try {
-          const playPromise = p.overlay.play();
-          if (playPromise && typeof playPromise.catch === "function") playPromise.catch(() => {});
-        } catch (_) {}
+        ensureVideoSourceLoaded(p.overlay);
+        playVideoSafely(p.overlay);
       });
     };
 
     const stopOverlays = () => {
       block.classList.remove("pose-overlay-active");
+      pauseVideoSafely(poseVideoEl);
       pairs.forEach((p) => {
         if (!p || !p.overlay) return;
-        try {
-          p.overlay.pause();
-        } catch (_) {}
+        pauseVideoSafely(p.overlay);
       });
     };
 
@@ -403,154 +457,190 @@
     return block;
   };
 
-  const hydrateTaskSections = async () => {
-    const sections = await loadTasksIndex();
-    const els = Array.from(document.querySelectorAll(".task-section")).filter((el) => TASK_SECTION_IDS.includes(el.id));
+  const hydrateTaskSection = async (sectionEl, sections) => {
+    if (!sectionEl || sectionEl.dataset.taskHydrated === "true" || sectionEl.dataset.taskHydrating === "true") return;
+    sectionEl.dataset.taskHydrating = "true";
 
-    await Promise.all(
-      els.map(async (sectionEl) => {
-        const sectionId = sectionEl.id;
-        const cases = Array.isArray(sections[sectionId]) ? sections[sectionId] : [];
-        if (!cases.length) return;
+    const sectionId = sectionEl.id;
+    const cases = Array.isArray(sections[sectionId]) ? sections[sectionId] : [];
+    if (!cases.length) {
+      sectionEl.dataset.taskHydrated = "true";
+      sectionEl.dataset.taskHydrating = "false";
+      return;
+    }
 
-        const stack = document.createElement("div");
-        stack.className = "compare-stack";
-        let caseCount = 0;
+    const stack = document.createElement("div");
+    stack.className = "compare-stack";
+    let caseCount = 0;
 
-        const body = sectionEl.querySelector(".task-body");
-        if (!body) return;
-        body.innerHTML = "";
-        body.appendChild(stack);
-        sectionEl.dataset.dynamicRendered = "true";
+    const body = sectionEl.querySelector(".task-body");
+    if (!body) {
+      sectionEl.dataset.taskHydrating = "false";
+      return;
+    }
+    body.innerHTML = "";
+    body.appendChild(stack);
+    sectionEl.dataset.dynamicRendered = "true";
 
-        const loadAndAppend = async (caseNames, inputsLabelState) => {
-          let shown = !!inputsLabelState;
-          for (let i = 0; i < caseNames.length; i += 1) {
-            const caseName = caseNames[i];
+    const loadAndAppend = async (caseNames, inputsLabelState) => {
+      let shown = !!inputsLabelState;
+      for (let i = 0; i < caseNames.length; i += 1) {
+        const caseName = caseNames[i];
+        try {
+          const manifest = await fetchJson(`${TASKS_BASE}${sectionId}/${caseName}/manifest.json`);
+          const showInputsLabel = sectionId === "rap2v" ? caseCount < 2 : !shown;
+          const block = await renderCaseBlock(sectionId, caseName, manifest, showInputsLabel);
+          stack.appendChild(block);
+          if (showInputsLabel) shown = true;
+          caseCount += 1;
+        } catch (_) {}
+      }
+      enableHoverControls(sectionEl);
+      enableLazyAutoplay(sectionEl);
+      enableAutoScrollText(sectionEl);
+      enableInputFade(sectionEl);
+      return shown;
+    };
+
+    const collapseLimit = getCasesCollapseLimit(sectionId);
+    const shouldCollapse = cases.length > collapseLimit;
+    const firstBatch = shouldCollapse ? cases.slice(0, collapseLimit) : cases;
+    const restBatch = shouldCollapse ? cases.slice(collapseLimit) : [];
+
+    const inputsLabelShown = await loadAndAppend(firstBatch, false);
+    const initialCount = stack.childElementCount;
+    if (!shouldCollapse || !initialCount) {
+      sectionEl.dataset.taskHydrated = "true";
+      sectionEl.dataset.taskHydrating = "false";
+      return;
+    }
+
+    const toggleWrap = document.createElement("div");
+    toggleWrap.className = "compare-toggle";
+    const toggleBtn = document.createElement("button");
+    toggleBtn.type = "button";
+    toggleBtn.className = "compare-toggle-btn";
+    toggleBtn.textContent = "See More";
+    toggleBtn.setAttribute("aria-expanded", "false");
+    toggleWrap.appendChild(toggleBtn);
+    stack.appendChild(toggleWrap);
+    const baseCount = stack.childElementCount;
+
+    let expanded = false;
+    let busy = false;
+    let restBlocks = null;
+
+    const collapse = () => {
+      while (stack.childElementCount > baseCount) {
+        const last = toggleWrap.previousElementSibling;
+        if (!last) break;
+        stack.removeChild(last);
+      }
+      expanded = false;
+      toggleBtn.textContent = "See More";
+      toggleBtn.setAttribute("aria-expanded", "false");
+    };
+
+    const expand = async () => {
+      if (!restBatch.length) return;
+      busy = true;
+      toggleBtn.disabled = true;
+      toggleBtn.textContent = "Loading…";
+
+      if (Array.isArray(restBlocks)) {
+        restBlocks.forEach((b) => stack.insertBefore(b, toggleWrap));
+        restBlocks.forEach((b) => {
+          const vids = Array.from(b.querySelectorAll("video"));
+          vids.forEach((video) => {
+            pauseVideoSafely(video);
             try {
-              const manifest = await fetchJson(`${TASKS_BASE}${sectionId}/${caseName}/manifest.json`);
-              const showInputsLabel = sectionId === "rap2v" ? caseCount < 2 : !shown;
-              const block = await renderCaseBlock(sectionId, caseName, manifest, showInputsLabel);
-              stack.appendChild(block);
-              if (showInputsLabel) shown = true;
-              caseCount += 1;
+              video.currentTime = 0;
             } catch (_) {}
-          }
-          enableHoverControls(sectionEl);
-          enableLazyAutoplay(sectionEl);
-          enableAutoScrollText(sectionEl);
-          enableInputFade(sectionEl);
-          return shown;
-        };
-
-        const collapseLimit = getCasesCollapseLimit(sectionId);
-        const shouldCollapse = cases.length > collapseLimit;
-        const firstBatch = shouldCollapse ? cases.slice(0, collapseLimit) : cases;
-        const restBatch = shouldCollapse ? cases.slice(collapseLimit) : [];
-
-        const inputsLabelShown = await loadAndAppend(firstBatch, false);
-        const initialCount = stack.childElementCount;
-        if (!shouldCollapse) return;
-        if (!initialCount) return;
-
-        const toggleWrap = document.createElement("div");
-        toggleWrap.className = "compare-toggle";
-        const toggleBtn = document.createElement("button");
-        toggleBtn.type = "button";
-        toggleBtn.className = "compare-toggle-btn";
-        toggleBtn.textContent = "See More";
-        toggleBtn.setAttribute("aria-expanded", "false");
-        toggleWrap.appendChild(toggleBtn);
-        stack.appendChild(toggleWrap);
-        const baseCount = stack.childElementCount;
-
-        let expanded = false;
-        let busy = false;
-        let restBlocks = null;
-
-        const collapse = () => {
-          while (stack.childElementCount > baseCount) {
-            const last = toggleWrap.previousElementSibling;
-            if (!last) break;
-            stack.removeChild(last);
-          }
-          expanded = false;
-          toggleBtn.textContent = "See More";
-          toggleBtn.setAttribute("aria-expanded", "false");
-        };
-
-        const expand = async () => {
-          if (!restBatch.length) return;
-          busy = true;
-          toggleBtn.disabled = true;
-          toggleBtn.textContent = "Loading…";
-
-          if (Array.isArray(restBlocks)) {
-            restBlocks.forEach((b) => stack.insertBefore(b, toggleWrap));
-            restBlocks.forEach((b) => {
-              const vids = Array.from(b.querySelectorAll("video"));
-              vids.forEach((video) => {
-                try {
-                  video.pause();
-                } catch (_) {}
-                try {
-                  video.currentTime = 0;
-                } catch (_) {}
-                try {
-                  video.load();
-                } catch (_) {}
-                const p = video.play();
-                if (p && typeof p.catch === "function") p.catch(() => {});
-              });
-            });
-            enableHoverControls(sectionEl);
-            enableLazyAutoplay(sectionEl);
-            enableAutoScrollText(sectionEl);
-            enableInputFade(sectionEl);
-          } else {
-            restBlocks = [];
-            let shown = inputsLabelShown || stack.childElementCount > 0;
-            for (let i = 0; i < restBatch.length; i += 1) {
-              const caseName = restBatch[i];
-              try {
-                const manifest = await fetchJson(`${TASKS_BASE}${sectionId}/${caseName}/manifest.json`);
-                const showInputsLabel = sectionId === "rap2v" ? caseCount < 2 : !shown;
-                const block = await renderCaseBlock(sectionId, caseName, manifest, showInputsLabel);
-                restBlocks.push(block);
-                stack.insertBefore(block, toggleWrap);
-                if (showInputsLabel) shown = true;
-                caseCount += 1;
-              } catch (_) {}
-            }
-            enableHoverControls(sectionEl);
-            enableLazyAutoplay(sectionEl);
-            enableAutoScrollText(sectionEl);
-            enableInputFade(sectionEl);
-          }
-
-          expanded = true;
-          toggleBtn.disabled = false;
-          toggleBtn.textContent = "See Less";
-          toggleBtn.setAttribute("aria-expanded", "true");
-          busy = false;
-        };
-
-        toggleBtn.addEventListener("click", async () => {
-          if (busy) return;
-          if (!expanded) {
-            await expand();
-          } else {
-            collapse();
-          }
+          });
         });
-      })
+        enableHoverControls(sectionEl);
+        enableLazyAutoplay(sectionEl);
+        enableAutoScrollText(sectionEl);
+        enableInputFade(sectionEl);
+      } else {
+        restBlocks = [];
+        let shown = inputsLabelShown || stack.childElementCount > 0;
+        for (let i = 0; i < restBatch.length; i += 1) {
+          const caseName = restBatch[i];
+          try {
+            const manifest = await fetchJson(`${TASKS_BASE}${sectionId}/${caseName}/manifest.json`);
+            const showInputsLabel = sectionId === "rap2v" ? caseCount < 2 : !shown;
+            const block = await renderCaseBlock(sectionId, caseName, manifest, showInputsLabel);
+            restBlocks.push(block);
+            stack.insertBefore(block, toggleWrap);
+            if (showInputsLabel) shown = true;
+            caseCount += 1;
+          } catch (_) {}
+        }
+        enableHoverControls(sectionEl);
+        enableLazyAutoplay(sectionEl);
+        enableAutoScrollText(sectionEl);
+        enableInputFade(sectionEl);
+      }
+
+      expanded = true;
+      toggleBtn.disabled = false;
+      toggleBtn.textContent = "See Less";
+      toggleBtn.setAttribute("aria-expanded", "true");
+      busy = false;
+    };
+
+    toggleBtn.addEventListener("click", async () => {
+      if (busy) return;
+      if (!expanded) {
+        await expand();
+      } else {
+        collapse();
+      }
+    });
+
+    sectionEl.dataset.taskHydrated = "true";
+    sectionEl.dataset.taskHydrating = "false";
+  };
+
+  const hydrateTaskSections = async () => {
+    const els = Array.from(document.querySelectorAll(".task-section")).filter((el) => TASK_SECTION_IDS.includes(el.id));
+    if (!els.length) return;
+
+    let sectionsPromise = null;
+    const getSections = () => {
+      if (!sectionsPromise) sectionsPromise = loadTasksIndex();
+      return sectionsPromise;
+    };
+
+    const hydrateOne = async (sectionEl) => {
+      const sections = await getSections();
+      await hydrateTaskSection(sectionEl, sections);
+    };
+
+    if (!("IntersectionObserver" in window)) {
+      await Promise.all(els.map((sectionEl) => hydrateOne(sectionEl)));
+      return;
+    }
+
+    const observer = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          const sectionEl = entry.target;
+          observer.unobserve(sectionEl);
+          hydrateOne(sectionEl).catch(() => {});
+        });
+      },
+      { rootMargin: "700px 0px", threshold: 0.01 }
     );
+
+    els.forEach((sectionEl) => observer.observe(sectionEl));
   };
 
   const enableHeroTeaser = () => {
     const titleEl = document.querySelector(".hero-title");
     const teaserEl = document.getElementById("heroTeaser");
-    const teaserVideo = document.getElementById("heroTeaserVideo");
 
     if (!titleEl || !teaserEl) return;
 
@@ -658,34 +748,54 @@
     els.forEach((el) => update(el));
   };
 
-  let lazyAutoplayObserver = null;
+  let lazyVideoPreloadObserver = null;
+  let lazyVideoPlaybackObserver = null;
   const enableLazyAutoplay = (root) => {
     const base = root || document;
     const videos = Array.from(base.querySelectorAll("video.lazy-video"));
+    videos.forEach((v) => prepareDeferredVideoElement(v));
     if (!("IntersectionObserver" in window)) {
-      videos.forEach((v) => v.play().catch(() => {}));
+      videos.forEach((v) => playVideoSafely(v));
       return;
     }
 
-    if (!lazyAutoplayObserver) {
-      lazyAutoplayObserver = new IntersectionObserver(
+    if (!lazyVideoPreloadObserver) {
+      lazyVideoPreloadObserver = new IntersectionObserver(
         (entries) => {
           entries.forEach((entry) => {
             if (!entry.isIntersecting) return;
-            const v = entry.target;
-            v.play().catch(() => {});
-            v.classList.remove("lazy-video");
-            lazyAutoplayObserver.unobserve(v);
+            ensureVideoSourceLoaded(entry.target);
           });
         },
-        { threshold: 0.35 }
+        { rootMargin: "420px 0px", threshold: 0.01 }
+      );
+    }
+
+    if (!lazyVideoPlaybackObserver) {
+      lazyVideoPlaybackObserver = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            const v = entry.target;
+            if (entry.isIntersecting) {
+              playVideoSafely(v);
+            } else {
+              pauseVideoSafely(v);
+            }
+          });
+        },
+        { threshold: 0.2 }
       );
     }
 
     videos.forEach((v) => {
-      if (v.dataset && v.dataset.lazyAutoplayObserved === "true") return;
-      if (v.dataset) v.dataset.lazyAutoplayObserved = "true";
-      lazyAutoplayObserver.observe(v);
+      if (v.dataset && v.dataset.lazyVideoPreloadObserved !== "true") {
+        v.dataset.lazyVideoPreloadObserved = "true";
+        lazyVideoPreloadObserver.observe(v);
+      }
+      if (v.dataset && v.dataset.lazyVideoPlaybackObserved !== "true") {
+        v.dataset.lazyVideoPlaybackObserved = "true";
+        lazyVideoPlaybackObserver.observe(v);
+      }
     });
   };
 
@@ -780,19 +890,14 @@
     const replayVideo = (video) => {
       if (!video) return;
 
-      try {
-        video.pause();
-      } catch (_) {}
+      pauseVideoSafely(video);
+      ensureVideoSourceLoaded(video);
 
       const playFromStart = () => {
         try {
           video.currentTime = 0;
         } catch (_) {}
-        try {
-          video.load();
-        } catch (_) {}
-        const p = video.play();
-        if (p && typeof p.catch === "function") p.catch(() => {});
+        playVideoSafely(video);
       };
 
       if (video.readyState >= 1) {
@@ -1078,7 +1183,11 @@
     };
 
     const openVideo = (videoEl) => {
-      const src = videoEl.currentSrc || (videoEl.querySelector("source") && videoEl.querySelector("source").src) || "";
+      const src =
+        videoEl.currentSrc ||
+        videoEl.dataset.src ||
+        (videoEl.querySelector("source") && videoEl.querySelector("source").src) ||
+        "";
       if (!src) return;
       silenceOthers();
       const v = document.createElement("video");
@@ -1288,13 +1397,13 @@
   };
 
   document.addEventListener("DOMContentLoaded", async () => {
+    enableLazyAutoplay();
     try {
       await hydrateTaskSections();
     } catch (_) {}
     enableHeroTeaser();
     enableHoverControls();
     enableMediaLightbox();
-    enableLazyAutoplay();
     enableAutoScrollText();
     enableInputFade();
     enableDropdown();
