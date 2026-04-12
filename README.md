@@ -1,5 +1,5 @@
 <div align="center">
-  <img width="420" alt="OmniShow logo" src="assets/logo_cropped.png">
+  <img width="320" alt="OmniShow logo" src="assets/logo_cropped.png">
 </div>
 
 <h1 align="center" style="line-height: 50px;">
