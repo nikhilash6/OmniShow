@@ -1,0 +1,1310 @@
+(() => {
+  const TASKS_BASE = "./assets/tasks/";
+  const TASK_SECTION_IDS = ["r2v", "ra2v", "rp2v", "rap2v"];
+  const DEFAULT_CASES_COLLAPSE_LIMIT = 4;
+  const CASES_COLLAPSE_LIMITS = {
+    r2v: 3,
+    ra2v: 3,
+    rp2v: 3
+  };
+
+  const getCasesCollapseLimit = (sectionId) => {
+    const n = CASES_COLLAPSE_LIMITS[sectionId];
+    return Number.isFinite(n) ? n : DEFAULT_CASES_COLLAPSE_LIMIT;
+  };
+
+  const fetchText = async (url) => {
+    const res = await fetch(url, { cache: "no-cache" });
+    if (!res.ok) throw new Error(`Failed to load: ${url}`);
+    return res.text();
+  };
+
+  const fetchJson = async (url) => {
+    const res = await fetch(url, { cache: "no-cache" });
+    if (!res.ok) throw new Error(`Failed to load: ${url}`);
+    return res.json();
+  };
+
+  const resolveUrl = (base, rel) => {
+    try {
+      return new URL(rel, new URL(base, window.location.href)).toString();
+    } catch (_) {
+      return rel;
+    }
+  };
+
+  const formatCaseLabel = (caseName) => {
+    const raw = String(caseName || "");
+    const m = raw.match(/case-(\d+)/i);
+    if (!m) return raw || "Case";
+    const n = String(m[1] || "");
+    const digits = n.length >= 2 ? n : n.padStart(2, "0");
+    return `Case ${digits}`;
+  };
+
+  const normalizeIndex = (raw) => {
+    if (!raw || typeof raw !== "object") return null;
+    if (raw.sections && typeof raw.sections === "object") return raw.sections;
+    const out = {};
+    TASK_SECTION_IDS.forEach((id) => {
+      if (Array.isArray(raw[id])) out[id] = raw[id];
+    });
+    if (Object.keys(out).length) return out;
+    return null;
+  };
+
+  const discoverCasesFromDirListing = async (sectionId) => {
+    const listingUrl = `${TASKS_BASE}${sectionId}/`;
+    const html = await fetchText(listingUrl);
+    const re = /href="(case-[^"\/]+\/)"/g;
+    const cases = [];
+    let m = null;
+    while ((m = re.exec(html))) {
+      const name = (m[1] || "").replace(/\/$/, "");
+      if (!cases.includes(name)) cases.push(name);
+    }
+    return cases.sort();
+  };
+
+  const loadTasksIndex = async () => {
+    try {
+      const raw = await fetchJson(`${TASKS_BASE}index.json`);
+      const sections = normalizeIndex(raw);
+      if (sections) return sections;
+    } catch (_) {}
+
+    const sections = {};
+    for (let i = 0; i < TASK_SECTION_IDS.length; i += 1) {
+      const id = TASK_SECTION_IDS[i];
+      try {
+        sections[id] = await discoverCasesFromDirListing(id);
+      } catch (_) {
+        sections[id] = [];
+      }
+    }
+    return sections;
+  };
+
+  const createTextCard = (text) => {
+    const card = document.createElement("div");
+    card.className = "input-card";
+    const label = document.createElement("div");
+    label.className = "input-label";
+    label.textContent = "Text";
+    const box = document.createElement("div");
+    box.className = "input-text input-text-scroll";
+    box.dataset.autoscroll = "true";
+    const inner = document.createElement("div");
+    inner.className = "input-text-inner";
+    inner.textContent = (text || "").trim();
+    box.appendChild(inner);
+    card.appendChild(label);
+    card.appendChild(box);
+    return card;
+  };
+
+  const createRefCard = (refs, caseBase) => {
+    const card = document.createElement("div");
+    card.className = "input-card input-card-ref";
+    const label = document.createElement("div");
+    label.className = "input-label";
+    label.textContent = "Reference Images";
+    const grid = document.createElement("div");
+    grid.className = "ref-grid";
+    (refs || []).forEach((src, idx) => {
+      const img = document.createElement("img");
+      img.className = "ref-img";
+      img.src = resolveUrl(caseBase, src);
+      img.alt = `Reference image ${idx + 1}`;
+      grid.appendChild(img);
+    });
+    card.appendChild(label);
+    card.appendChild(grid);
+    return card;
+  };
+
+  const createAudioCard = (audioSrc, caseBase) => {
+    const card = document.createElement("div");
+    card.className = "input-card";
+    const label = document.createElement("div");
+    label.className = "input-label";
+    label.textContent = "Audio";
+    const audio = document.createElement("audio");
+    audio.className = "audio-player";
+    audio.controls = true;
+    audio.setAttribute("controlslist", "nodownload noplaybackrate noremoteplayback");
+    audio.preload = "metadata";
+    const source = document.createElement("source");
+    source.src = resolveUrl(caseBase, audioSrc);
+    const ext = (audioSrc || "").toLowerCase().split(".").pop();
+    source.type = ext === "mp3" ? "audio/mpeg" : "audio/wav";
+    audio.appendChild(source);
+    card.appendChild(label);
+    card.appendChild(audio);
+    return card;
+  };
+
+  const createPoseCard = (poseSrc, caseBase) => {
+    const card = document.createElement("div");
+    card.className = "input-card input-card-pose";
+    const label = document.createElement("div");
+    label.className = "input-label";
+    label.textContent = "Pose";
+    const wrap = document.createElement("div");
+    wrap.className = "portrait-video portrait-video-input";
+    const video = document.createElement("video");
+    video.className = "lazy-video";
+    video.muted = true;
+    video.loop = true;
+    video.playsInline = true;
+    video.preload = "none";
+    const source = document.createElement("source");
+    source.src = resolveUrl(caseBase, poseSrc);
+    source.type = "video/mp4";
+    video.appendChild(source);
+    wrap.appendChild(video);
+    card.appendChild(label);
+    card.appendChild(wrap);
+    return card;
+  };
+
+  const createVideoCard = (output, caseBase, caseName) => {
+    const card = document.createElement("div");
+    card.className = "video-card";
+    const label = document.createElement("div");
+    label.className = "video-label";
+    label.textContent = output.label || "";
+    if ((output.kind || "").toLowerCase() === "ours") label.classList.add("video-label-ours");
+    const wrap = document.createElement("div");
+    wrap.className = "portrait-video portrait-video-xl";
+    const badge = document.createElement("div");
+    badge.className = "case-badge";
+    badge.textContent = (output && output.label) || formatCaseLabel(caseName);
+    badge.setAttribute("aria-hidden", "true");
+    const video = document.createElement("video");
+    video.className = "lazy-video";
+    video.muted = true;
+    video.loop = true;
+    video.playsInline = true;
+    video.preload = "none";
+    const source = document.createElement("source");
+    source.src = resolveUrl(caseBase, output.src || "");
+    source.type = "video/mp4";
+    video.appendChild(source);
+    wrap.appendChild(badge);
+    wrap.appendChild(video);
+    card.appendChild(label);
+    card.appendChild(wrap);
+    return card;
+  };
+
+  const attachPoseOverlay = (block, poseSrc, caseBase, poseVideoEl) => {
+    if (!block || !poseSrc || !poseVideoEl) return;
+    const poseUrl = resolveUrl(caseBase, poseSrc);
+    const wraps = Array.from(block.querySelectorAll(".compare-output .portrait-video"));
+    if (!wraps.length) return;
+
+    const pairs = wraps
+      .map((wrap) => {
+        if (!wrap) return null;
+
+        const baseVideo = wrap.querySelector("video:not(.pose-overlay-video)");
+        if (!baseVideo) return null;
+
+        let overlay = wrap.querySelector(".pose-overlay-video");
+        if (!overlay) {
+          overlay = document.createElement("video");
+          overlay.className = "pose-overlay-video";
+          overlay.muted = true;
+          overlay.loop = true;
+          overlay.playsInline = true;
+          overlay.preload = "none";
+          const s = document.createElement("source");
+          s.src = poseUrl;
+          s.type = "video/mp4";
+          overlay.appendChild(s);
+          wrap.appendChild(overlay);
+        }
+
+        return { baseVideo, overlay };
+      })
+      .filter(Boolean);
+
+    if (!pairs.length) return;
+
+    const getAlignedTime = (t, dur) => {
+      const tt = Number.isFinite(t) && t >= 0 ? t : 0;
+      const d = Number.isFinite(dur) && dur > 0 ? dur : 0;
+      if (!d) return tt;
+      const m = tt % d;
+      return m < 0 ? m + d : m;
+    };
+
+    const getMasterTime = () => {
+      const candidate = pairs.find((p) => p && p.baseVideo && p.baseVideo.readyState >= 1) || pairs[0];
+      if (!candidate || !candidate.baseVideo) return 0;
+      return candidate.baseVideo.currentTime || 0;
+    };
+
+    const syncOverlays = () => {
+      if (!block.classList.contains("pose-overlay-active")) return;
+      const t = getMasterTime();
+
+      if (poseVideoEl && poseVideoEl.readyState >= 1) {
+        const target = getAlignedTime(t, poseVideoEl.duration);
+        const dt = Math.abs((poseVideoEl.currentTime || 0) - target);
+        if (dt > 0.12) {
+          try {
+            poseVideoEl.currentTime = target;
+          } catch (_) {}
+        }
+      }
+
+      pairs.forEach((p) => {
+        if (!p || !p.overlay || !p.baseVideo) return;
+        if (p.overlay.readyState < 1) return;
+        const target = getAlignedTime(p.baseVideo.currentTime || 0, p.overlay.duration);
+        const dt = Math.abs((p.overlay.currentTime || 0) - target);
+        if (dt > 0.12) {
+          try {
+            p.overlay.currentTime = target;
+          } catch (_) {}
+        }
+
+        if (p.baseVideo.paused) {
+          try {
+            p.overlay.pause();
+          } catch (_) {}
+        } else {
+          try {
+            const playPromise = p.overlay.play();
+            if (playPromise && typeof playPromise.catch === "function") playPromise.catch(() => {});
+          } catch (_) {}
+        }
+      });
+    };
+
+    const playOverlays = () => {
+      block.classList.add("pose-overlay-active");
+      syncOverlays();
+      try {
+        const pp = poseVideoEl.play();
+        if (pp && typeof pp.catch === "function") pp.catch(() => {});
+      } catch (_) {}
+      pairs.forEach((p) => {
+        if (!p || !p.overlay) return;
+        try {
+          p.overlay.load();
+        } catch (_) {}
+        try {
+          const playPromise = p.overlay.play();
+          if (playPromise && typeof playPromise.catch === "function") playPromise.catch(() => {});
+        } catch (_) {}
+      });
+    };
+
+    const stopOverlays = () => {
+      block.classList.remove("pose-overlay-active");
+      pairs.forEach((p) => {
+        if (!p || !p.overlay) return;
+        try {
+          p.overlay.pause();
+        } catch (_) {}
+      });
+    };
+
+    const hoverTarget = poseVideoEl.closest(".portrait-video") || poseVideoEl;
+    hoverTarget.addEventListener("mouseenter", playOverlays);
+    hoverTarget.addEventListener("mouseleave", stopOverlays);
+    pairs.forEach((p) => {
+      if (!p || !p.baseVideo) return;
+      p.baseVideo.addEventListener("timeupdate", syncOverlays);
+      p.baseVideo.addEventListener("seeked", syncOverlays);
+      p.baseVideo.addEventListener("playing", syncOverlays);
+      p.baseVideo.addEventListener("pause", syncOverlays);
+    });
+  };
+
+  const reorderOutputsForSection = (sectionId, outputs) => {
+    if (sectionId !== "r2v") return outputs;
+    const ours = [];
+    const others = [];
+    (outputs || []).forEach((o) => {
+      if ((o && (o.kind || "").toLowerCase()) === "ours") ours.push(o);
+      else others.push(o);
+    });
+
+    const wanted = ["hunyuancustom", "humo", "vace", "phantom"];
+    const rank = (o) => {
+      const label = ((o && o.label) || "").toLowerCase();
+      for (let i = 0; i < wanted.length; i += 1) {
+        if (label.includes(wanted[i])) return i;
+      }
+      return wanted.length;
+    };
+    others.sort((a, b) => rank(a) - rank(b));
+    return ours.concat(others);
+  };
+
+  const renderCaseBlock = async (sectionId, caseName, manifest, showInputsLabel) => {
+    const caseBase = `${TASKS_BASE}${sectionId}/${caseName}/`;
+    const block = document.createElement("div");
+    block.className = "compare-block compare-block-fullbleed";
+
+    const aside = document.createElement("aside");
+    aside.className = "compare-input";
+
+    if (showInputsLabel) {
+      const title = document.createElement("div");
+      title.className = "compare-input-title";
+      title.textContent = "Inputs";
+      aside.appendChild(title);
+    }
+
+    const inputs = (manifest && manifest.inputs) || {};
+    if (inputs.text) {
+      try {
+        const t = await fetchText(resolveUrl(caseBase, inputs.text));
+        aside.appendChild(createTextCard(t));
+      } catch (_) {}
+    }
+
+    if (inputs.audio) {
+      aside.appendChild(createAudioCard(inputs.audio, caseBase));
+    }
+
+    const hasRefs = Array.isArray(inputs.refs) && inputs.refs.length;
+    const hasPose = !!inputs.pose;
+    let poseVideoEl = null;
+    if (hasPose) {
+      const row = document.createElement("div");
+      row.className = "input-row";
+      if (hasRefs) row.appendChild(createRefCard(inputs.refs, caseBase));
+      const poseCard = createPoseCard(inputs.pose, caseBase);
+      poseVideoEl = poseCard.querySelector("video");
+      row.appendChild(poseCard);
+      aside.appendChild(row);
+    } else if (hasRefs) {
+      aside.appendChild(createRefCard(inputs.refs, caseBase));
+    }
+
+    const outputWrap = document.createElement("div");
+    outputWrap.className = "compare-output";
+    const outputRow = document.createElement("div");
+    outputRow.className = "output-row";
+    reorderOutputsForSection(sectionId, manifest.outputs || []).forEach((o) =>
+      outputRow.appendChild(createVideoCard(o, caseBase, caseName))
+    );
+    outputWrap.appendChild(outputRow);
+
+    block.appendChild(aside);
+    block.appendChild(outputWrap);
+    if (hasPose && poseVideoEl) attachPoseOverlay(block, inputs.pose, caseBase, poseVideoEl);
+    return block;
+  };
+
+  const hydrateTaskSections = async () => {
+    const sections = await loadTasksIndex();
+    const els = Array.from(document.querySelectorAll(".task-section")).filter((el) => TASK_SECTION_IDS.includes(el.id));
+
+    await Promise.all(
+      els.map(async (sectionEl) => {
+        const sectionId = sectionEl.id;
+        const cases = Array.isArray(sections[sectionId]) ? sections[sectionId] : [];
+        if (!cases.length) return;
+
+        const stack = document.createElement("div");
+        stack.className = "compare-stack";
+        let caseCount = 0;
+
+        const body = sectionEl.querySelector(".task-body");
+        if (!body) return;
+        body.innerHTML = "";
+        body.appendChild(stack);
+        sectionEl.dataset.dynamicRendered = "true";
+
+        const loadAndAppend = async (caseNames, inputsLabelState) => {
+          let shown = !!inputsLabelState;
+          for (let i = 0; i < caseNames.length; i += 1) {
+            const caseName = caseNames[i];
+            try {
+              const manifest = await fetchJson(`${TASKS_BASE}${sectionId}/${caseName}/manifest.json`);
+              const showInputsLabel = sectionId === "rap2v" ? caseCount < 2 : !shown;
+              const block = await renderCaseBlock(sectionId, caseName, manifest, showInputsLabel);
+              stack.appendChild(block);
+              if (showInputsLabel) shown = true;
+              caseCount += 1;
+            } catch (_) {}
+          }
+          enableHoverControls(sectionEl);
+          enableLazyAutoplay(sectionEl);
+          enableAutoScrollText(sectionEl);
+          enableInputFade(sectionEl);
+          return shown;
+        };
+
+        const collapseLimit = getCasesCollapseLimit(sectionId);
+        const shouldCollapse = cases.length > collapseLimit;
+        const firstBatch = shouldCollapse ? cases.slice(0, collapseLimit) : cases;
+        const restBatch = shouldCollapse ? cases.slice(collapseLimit) : [];
+
+        const inputsLabelShown = await loadAndAppend(firstBatch, false);
+        const initialCount = stack.childElementCount;
+        if (!shouldCollapse) return;
+        if (!initialCount) return;
+
+        const toggleWrap = document.createElement("div");
+        toggleWrap.className = "compare-toggle";
+        const toggleBtn = document.createElement("button");
+        toggleBtn.type = "button";
+        toggleBtn.className = "compare-toggle-btn";
+        toggleBtn.textContent = "See More";
+        toggleBtn.setAttribute("aria-expanded", "false");
+        toggleWrap.appendChild(toggleBtn);
+        stack.appendChild(toggleWrap);
+        const baseCount = stack.childElementCount;
+
+        let expanded = false;
+        let busy = false;
+        let restBlocks = null;
+
+        const collapse = () => {
+          while (stack.childElementCount > baseCount) {
+            const last = toggleWrap.previousElementSibling;
+            if (!last) break;
+            stack.removeChild(last);
+          }
+          expanded = false;
+          toggleBtn.textContent = "See More";
+          toggleBtn.setAttribute("aria-expanded", "false");
+        };
+
+        const expand = async () => {
+          if (!restBatch.length) return;
+          busy = true;
+          toggleBtn.disabled = true;
+          toggleBtn.textContent = "Loading…";
+
+          if (Array.isArray(restBlocks)) {
+            restBlocks.forEach((b) => stack.insertBefore(b, toggleWrap));
+            restBlocks.forEach((b) => {
+              const vids = Array.from(b.querySelectorAll("video"));
+              vids.forEach((video) => {
+                try {
+                  video.pause();
+                } catch (_) {}
+                try {
+                  video.currentTime = 0;
+                } catch (_) {}
+                try {
+                  video.load();
+                } catch (_) {}
+                const p = video.play();
+                if (p && typeof p.catch === "function") p.catch(() => {});
+              });
+            });
+            enableHoverControls(sectionEl);
+            enableLazyAutoplay(sectionEl);
+            enableAutoScrollText(sectionEl);
+            enableInputFade(sectionEl);
+          } else {
+            restBlocks = [];
+            let shown = inputsLabelShown || stack.childElementCount > 0;
+            for (let i = 0; i < restBatch.length; i += 1) {
+              const caseName = restBatch[i];
+              try {
+                const manifest = await fetchJson(`${TASKS_BASE}${sectionId}/${caseName}/manifest.json`);
+                const showInputsLabel = sectionId === "rap2v" ? caseCount < 2 : !shown;
+                const block = await renderCaseBlock(sectionId, caseName, manifest, showInputsLabel);
+                restBlocks.push(block);
+                stack.insertBefore(block, toggleWrap);
+                if (showInputsLabel) shown = true;
+                caseCount += 1;
+              } catch (_) {}
+            }
+            enableHoverControls(sectionEl);
+            enableLazyAutoplay(sectionEl);
+            enableAutoScrollText(sectionEl);
+            enableInputFade(sectionEl);
+          }
+
+          expanded = true;
+          toggleBtn.disabled = false;
+          toggleBtn.textContent = "See Less";
+          toggleBtn.setAttribute("aria-expanded", "true");
+          busy = false;
+        };
+
+        toggleBtn.addEventListener("click", async () => {
+          if (busy) return;
+          if (!expanded) {
+            await expand();
+          } else {
+            collapse();
+          }
+        });
+      })
+    );
+  };
+
+  const enableHeroTeaser = () => {
+    const titleEl = document.querySelector(".hero-title");
+    const teaserEl = document.getElementById("heroTeaser");
+    const teaserVideo = document.getElementById("heroTeaserVideo");
+
+    if (!titleEl || !teaserEl) return;
+
+    const updateWidth = () => {
+      const titleWidth = titleEl.getBoundingClientRect().width;
+      if (!titleWidth) return;
+      teaserEl.style.width = `${Math.round(titleWidth * 0.75)}px`;
+    };
+
+    updateWidth();
+    if (document.fonts && document.fonts.ready) {
+      document.fonts.ready.then(updateWidth).catch(() => {});
+    }
+    window.addEventListener("resize", () => requestAnimationFrame(updateWidth));
+  };
+
+  const enableHoverControls = (root) => {
+    const base = root || document;
+    const allVideos = Array.from(base.querySelectorAll("video"));
+    allVideos.forEach((video) => {
+      if (video.dataset && video.dataset.hoverControlsBound === "true") return;
+      if (video.dataset) video.dataset.hoverControlsBound = "true";
+      video.addEventListener("mouseenter", () => {
+        video.controls = true;
+      });
+      video.addEventListener("mouseleave", () => {
+        video.controls = false;
+      });
+    });
+  };
+
+  const enableAutoScrollText = (root) => {
+    const base = root || document;
+    const scrollers = Array.from(base.querySelectorAll('[data-autoscroll="true"]'));
+    scrollers.forEach((el) => {
+      if (el.dataset && el.dataset.autoScrollBound === "true") return;
+      if (el.dataset) el.dataset.autoScrollBound = "true";
+      let raf = 0;
+      let isRunning = false;
+      let phase = "down";
+      let lastTs = 0;
+      let pauseUntil = 0;
+
+      const stop = () => {
+        isRunning = false;
+        phase = "down";
+        lastTs = 0;
+        pauseUntil = 0;
+        if (raf) cancelAnimationFrame(raf);
+        raf = 0;
+        el.scrollTop = 0;
+      };
+
+      const tick = (ts) => {
+        if (!isRunning) return;
+        const max = Math.max(0, el.scrollHeight - el.clientHeight);
+        if (max <= 2) {
+          stop();
+          return;
+        }
+
+        if (pauseUntil && ts < pauseUntil) {
+          raf = requestAnimationFrame(tick);
+          return;
+        }
+
+        if (!lastTs) lastTs = ts;
+        const dt = ts - lastTs;
+        lastTs = ts;
+
+        const speed = 0.02;
+        if (phase === "down") {
+          el.scrollTop = Math.min(max, el.scrollTop + dt * speed);
+          if (el.scrollTop >= max - 1) {
+            el.scrollTop = max;
+            phase = "done";
+          }
+        }
+
+        raf = requestAnimationFrame(tick);
+      };
+
+      el.addEventListener("mouseenter", () => {
+        if (isRunning) return;
+        if (el.scrollHeight <= el.clientHeight + 2) return;
+        isRunning = true;
+        raf = requestAnimationFrame(tick);
+      });
+
+      el.addEventListener("mouseleave", stop);
+    });
+  };
+
+  const enableInputFade = (root) => {
+    const base = root || document;
+    const els = Array.from(base.querySelectorAll(".input-text-scroll"));
+    if (!els.length) return;
+
+    const update = (el) => {
+      const text = (el.textContent || "").trim();
+      if (text) el.classList.add("has-fade");
+      else el.classList.remove("has-fade");
+    };
+
+    els.forEach((el) => update(el));
+  };
+
+  let lazyAutoplayObserver = null;
+  const enableLazyAutoplay = (root) => {
+    const base = root || document;
+    const videos = Array.from(base.querySelectorAll("video.lazy-video"));
+    if (!("IntersectionObserver" in window)) {
+      videos.forEach((v) => v.play().catch(() => {}));
+      return;
+    }
+
+    if (!lazyAutoplayObserver) {
+      lazyAutoplayObserver = new IntersectionObserver(
+        (entries) => {
+          entries.forEach((entry) => {
+            if (!entry.isIntersecting) return;
+            const v = entry.target;
+            v.play().catch(() => {});
+            v.classList.remove("lazy-video");
+            lazyAutoplayObserver.unobserve(v);
+          });
+        },
+        { threshold: 0.35 }
+      );
+    }
+
+    videos.forEach((v) => {
+      if (v.dataset && v.dataset.lazyAutoplayObserved === "true") return;
+      if (v.dataset) v.dataset.lazyAutoplayObserved = "true";
+      lazyAutoplayObserver.observe(v);
+    });
+  };
+
+  const enableDropdown = () => {
+    const dropdowns = Array.from(document.querySelectorAll(".dropdown"));
+    dropdowns.forEach((dropdown) => {
+      const btn = dropdown.querySelector(".dropbtn");
+      if (!btn) return;
+
+      btn.addEventListener("click", (event) => {
+        const nav = document.querySelector(".top-nav");
+        const collapsedNav = !!(nav && nav.classList.contains("is-collapsed"));
+        if (window.innerWidth <= 768 || collapsedNav) {
+          event.preventDefault();
+          dropdown.classList.toggle("active");
+        }
+      });
+    });
+
+    document.addEventListener("click", (event) => {
+      dropdowns.forEach((dropdown) => {
+        if (dropdown.contains(event.target)) return;
+        dropdown.classList.remove("active");
+      });
+    });
+  };
+
+  const enableTopNavResponsive = () => {
+    const nav = document.querySelector(".top-nav");
+    const inner = nav ? nav.querySelector(".top-nav-inner") : null;
+    const left = nav ? nav.querySelector(".top-nav-left") : null;
+    const actions = nav ? nav.querySelector(".top-nav-actions") : null;
+    const toggle = document.getElementById("topNavMenuToggle");
+    if (!nav || !inner || !left || !actions || !toggle) return;
+
+    const closeMenu = () => {
+      nav.classList.remove("is-menu-open");
+      toggle.setAttribute("aria-expanded", "false");
+    };
+
+    const measureInlineWidth = (container) => {
+      if (!container) return 0;
+      const styles = getComputedStyle(container);
+      const gap = parseFloat(styles.columnGap || styles.gap) || 0;
+      const children = Array.from(container.children).filter((el) => {
+        const rect = el.getBoundingClientRect();
+        return rect.width > 0 && rect.height > 0;
+      });
+      if (!children.length) return 0;
+      const childWidth = children.reduce((sum, el) => sum + el.getBoundingClientRect().width, 0);
+      return childWidth + gap * Math.max(0, children.length - 1);
+    };
+
+    const update = () => {
+      const wasCollapsed = nav.classList.contains("is-collapsed");
+      closeMenu();
+      if (wasCollapsed) nav.classList.remove("is-collapsed");
+
+      const innerStyles = getComputedStyle(inner);
+      const innerGap = parseFloat(innerStyles.columnGap || innerStyles.gap) || 0;
+      const leftContentWidth = measureInlineWidth(left);
+      const actionsContentWidth = measureInlineWidth(actions);
+      const shouldCollapse = leftContentWidth + actionsContentWidth + innerGap > inner.clientWidth;
+
+      if (shouldCollapse) {
+        nav.classList.add("is-collapsed");
+      }
+    };
+
+    toggle.addEventListener("click", (event) => {
+      event.preventDefault();
+      const isOpen = nav.classList.toggle("is-menu-open");
+      toggle.setAttribute("aria-expanded", isOpen ? "true" : "false");
+    });
+
+    document.addEventListener("click", (event) => {
+      if (nav.contains(event.target)) return;
+      closeMenu();
+    });
+
+    window.addEventListener("resize", update, { passive: true });
+
+    const ro = new ResizeObserver(update);
+    ro.observe(inner);
+    update();
+  };
+
+  const enableReplayAll = () => {
+    const buttons = Array.from(document.querySelectorAll(".task-replay"));
+    if (!buttons.length) return;
+
+    const replayVideo = (video) => {
+      if (!video) return;
+
+      try {
+        video.pause();
+      } catch (_) {}
+
+      const playFromStart = () => {
+        try {
+          video.currentTime = 0;
+        } catch (_) {}
+        try {
+          video.load();
+        } catch (_) {}
+        const p = video.play();
+        if (p && typeof p.catch === "function") p.catch(() => {});
+      };
+
+      if (video.readyState >= 1) {
+        playFromStart();
+        return;
+      }
+
+      video.addEventListener("loadedmetadata", playFromStart, { once: true });
+      try {
+        video.load();
+      } catch (_) {}
+    };
+
+    const replayAllInSection = (sectionEl) => {
+      const vids = Array.from(sectionEl.querySelectorAll("video"));
+      vids.forEach((v) => {
+        try {
+          v.pause();
+        } catch (_) {}
+      });
+      vids.forEach(replayVideo);
+    };
+
+    buttons.forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const section = btn.closest(".task-section");
+        if (!section) return;
+        replayAllInSection(section);
+      });
+    });
+  };
+
+  const enableNavTypewriter = () => {
+    const titleEl = document.getElementById("navTaskTitle");
+    if (!titleEl) return;
+
+    const sections = Array.from(document.querySelectorAll(".task-section"));
+    if (!sections.length) return;
+
+    const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+    const prefersReducedMotion = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+
+    const animateScrollTo = (toY, durationMs) =>
+      new Promise((resolve) => {
+        const startY = window.scrollY || window.pageYOffset || 0;
+        const delta = toY - startY;
+        if (Math.abs(delta) < 2 || durationMs <= 0 || prefersReducedMotion) {
+          window.scrollTo(0, toY);
+          resolve();
+          return;
+        }
+
+        const ease = (t) => 1 - Math.pow(1 - t, 3);
+        const start = performance.now();
+        const step = (now) => {
+          const t = Math.min(1, (now - start) / durationMs);
+          window.scrollTo(0, Math.round(startY + delta * ease(t)));
+          if (t < 1) {
+            requestAnimationFrame(step);
+            return;
+          }
+          resolve();
+        };
+        requestAnimationFrame(step);
+      });
+
+    const scrollToTarget = (targetId) => {
+      if (!targetId) return;
+      const nav = document.querySelector(".top-nav");
+      const navOffset = (nav ? nav.offsetHeight : 0) + 10;
+
+      if (targetId === "hero") {
+        animateScrollTo(0, 420);
+        return;
+      }
+
+      const target = document.getElementById(targetId);
+      if (!target) return;
+      const top = target.getBoundingClientRect().top + (window.scrollY || window.pageYOffset || 0) - navOffset;
+      animateScrollTo(Math.max(0, top), 520);
+    };
+
+    const typewriter = (() => {
+      let isRunning = false;
+      let pending = null;
+      let current = "";
+
+      const set = async (target) => {
+        const next = (target || "").trim();
+        if (next === current) return;
+        if (isRunning) {
+          pending = next;
+          return;
+        }
+        isRunning = true;
+        pending = null;
+
+        const deleteSpeed = 18;
+        const typeSpeed = 26;
+        const settlePause = 140;
+
+        while (current.length) {
+          current = current.slice(0, -1);
+          titleEl.textContent = current;
+          await sleep(deleteSpeed);
+        }
+
+        await sleep(settlePause);
+
+        for (let i = 0; i < next.length; i += 1) {
+          current += next[i];
+          titleEl.textContent = current;
+          await sleep(typeSpeed);
+        }
+
+        isRunning = false;
+
+        if (pending !== null && pending !== current) {
+          const p = pending;
+          pending = null;
+          set(p);
+        }
+      };
+
+      const setImmediate = (t) => {
+        current = (t || "").trim();
+        pending = null;
+        titleEl.textContent = current;
+      };
+
+      return { set, setImmediate };
+    })();
+
+    const getTitle = (el) => (el && el.dataset ? el.dataset.taskTitle || "" : "");
+    const highlight = { text: "boundless creativity, with your multimodal inputs :\u00A0)", targetId: "gallery" };
+    const featureItems = [
+      { text: "Smooth Motion Quality", targetId: "mf-motion-quality" },
+      { text: "Robust Physical Plausibility", targetId: "mf-physical-plausibility" },
+      { text: "Native Long-Shot Generation", targetId: "mf-long-shot" },
+      { text: "Expressive Avatar Animation", targetId: "mf-avatar-animation" },
+      { text: "Stable Identity Preservation", targetId: "mf-alive" },
+    ].filter((x) => x.text && x.targetId && document.getElementById(x.targetId));
+
+    const items = []
+      .concat(
+        sections
+          .map((s) => ({ text: getTitle(s).trim(), targetId: s.id || "" }))
+          .filter((x) => x.text && x.targetId)
+      )
+      .concat(featureItems)
+      .concat([highlight])
+      .filter((x) => x.text && x.targetId)
+      .filter((x, i, arr) => arr.findIndex((y) => y.text === x.text) === i);
+    if (!items.length) return;
+
+    let idx = 0;
+    let activeTargetId = items[idx].targetId;
+    titleEl.addEventListener("click", () => scrollToTarget(activeTargetId));
+
+    typewriter.setImmediate("");
+    typewriter.set(items[idx].text);
+
+    if (items.length === 1) return;
+
+    const intervalMs = 6000;
+    window.setInterval(() => {
+      idx = (idx + 1) % items.length;
+      activeTargetId = items[idx].targetId;
+      typewriter.set(items[idx].text);
+    }, intervalMs);
+  };
+
+  const enableMediaLightbox = () => {
+    const box = document.createElement("div");
+    box.className = "media-lightbox";
+    box.setAttribute("role", "dialog");
+    box.setAttribute("aria-modal", "true");
+    box.tabIndex = -1;
+
+    const inner = document.createElement("div");
+    inner.className = "media-lightbox-inner";
+
+    const closeBtn = document.createElement("button");
+    closeBtn.type = "button";
+    closeBtn.className = "media-lightbox-close";
+    closeBtn.setAttribute("aria-label", "Close");
+    closeBtn.textContent = "×";
+
+    inner.appendChild(closeBtn);
+    box.appendChild(inner);
+    document.body.appendChild(box);
+
+    let isOpen = false;
+    let lastActive = null;
+    let silenced = null;
+
+    const restoreSilenced = () => {
+      if (!Array.isArray(silenced)) return;
+      silenced.forEach((x) => {
+        const el = x.el;
+        if (!el) return;
+        try {
+          el.muted = x.muted;
+        } catch (_) {}
+        if (typeof x.volume === "number") {
+          try {
+            el.volume = x.volume;
+          } catch (_) {}
+        }
+        if (typeof x.currentTime === "number") {
+          try {
+            el.currentTime = x.currentTime;
+          } catch (_) {}
+        }
+        if (x.wasPlaying) {
+          try {
+            const p = el.play();
+            if (p && typeof p.catch === "function") p.catch(() => {});
+          } catch (_) {}
+        }
+      });
+      silenced = null;
+    };
+
+    const silenceOthers = () => {
+      restoreSilenced();
+      silenced = [];
+      const medias = Array.from(document.querySelectorAll("video, audio")).filter((el) => !el.closest(".media-lightbox"));
+      medias.forEach((el) => {
+        silenced.push({
+          el,
+          muted: !!el.muted,
+          volume: typeof el.volume === "number" ? el.volume : undefined,
+          currentTime: typeof el.currentTime === "number" ? el.currentTime : undefined,
+          wasPlaying: !el.paused,
+        });
+        try {
+          el.muted = true;
+        } catch (_) {}
+        if (el.tagName === "AUDIO") {
+          try {
+            el.pause();
+          } catch (_) {}
+        }
+      });
+    };
+
+    const close = () => {
+      if (!isOpen) return;
+      isOpen = false;
+      document.body.classList.remove("has-lightbox");
+      box.classList.remove("is-open");
+      const media = inner.querySelector(".media-lightbox-media");
+      if (media && media.tagName === "VIDEO") {
+        try {
+          media.pause();
+        } catch (_) {}
+      }
+      if (media) media.remove();
+      restoreSilenced();
+      if (lastActive && typeof lastActive.focus === "function") lastActive.focus();
+    };
+
+    const openWith = (media) => {
+      const prev = inner.querySelector(".media-lightbox-media");
+      if (prev) prev.remove();
+      lastActive = document.activeElement;
+      inner.appendChild(media);
+      document.body.classList.add("has-lightbox");
+      box.classList.add("is-open");
+      isOpen = true;
+      box.focus();
+    };
+
+    const openImg = (imgEl) => {
+      const src = imgEl.currentSrc || imgEl.src;
+      if (!src) return;
+      const img = document.createElement("img");
+      img.className = "media-lightbox-media";
+      img.src = src;
+      img.alt = imgEl.alt || "";
+      openWith(img);
+    };
+
+    const openVideo = (videoEl) => {
+      const src = videoEl.currentSrc || (videoEl.querySelector("source") && videoEl.querySelector("source").src) || "";
+      if (!src) return;
+      silenceOthers();
+      const v = document.createElement("video");
+      v.className = "media-lightbox-media";
+      v.controls = true;
+      v.playsInline = true;
+      v.preload = "metadata";
+      v.loop = !!videoEl.loop;
+      v.muted = false;
+      v.setAttribute("controlslist", "nodownload noplaybackrate noremoteplayback");
+      const s = document.createElement("source");
+      s.src = src;
+      s.type = "video/mp4";
+      v.appendChild(s);
+      if (videoEl.currentTime) {
+        v.addEventListener(
+          "loadedmetadata",
+          () => {
+            try {
+              v.currentTime = videoEl.currentTime;
+            } catch (_) {}
+          },
+          { once: true }
+        );
+      }
+      openWith(v);
+      const p = v.play();
+      if (p && typeof p.catch === "function") {
+        p.catch(() => {
+          try {
+            v.muted = true;
+          } catch (_) {}
+          v.play().catch(() => {});
+        });
+      }
+    };
+
+    closeBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      close();
+    });
+
+    box.addEventListener("click", (e) => {
+      if (inner.contains(e.target) && e.target !== box) return;
+      close();
+    });
+
+    document.addEventListener("keydown", (e) => {
+      if (!isOpen) return;
+      if (e.key === "Escape") close();
+    });
+
+    document.addEventListener("click", (e) => {
+      const t = e.target;
+      if (!t || !(t instanceof Element)) return;
+      const el = t.closest("img, video");
+      if (!el) return;
+      if (el.closest(".media-lightbox")) return;
+      const isHeroTeaser = el.id === "heroTeaserVideo";
+      if (!isHeroTeaser && !el.closest("main")) return;
+      if (el.tagName === "IMG") {
+        e.preventDefault();
+        openImg(el);
+      } else if (el.tagName === "VIDEO") {
+        e.preventDefault();
+        openVideo(el);
+      }
+    });
+  };
+
+  const enableBackToTop = () => {
+    const btn = document.getElementById("back-to-top");
+    if (!btn) return;
+
+    const thresholdPx = 360;
+    const update = () => {
+      if (window.scrollY > thresholdPx) btn.classList.add("is-visible");
+      else btn.classList.remove("is-visible");
+    };
+
+    update();
+    window.addEventListener("scroll", update, { passive: true });
+    btn.addEventListener("click", () => {
+      const reduceMotion =
+        window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+      try {
+        window.scrollTo({ top: 0, behavior: reduceMotion ? "auto" : "smooth" });
+      } catch (_) {
+        window.scrollTo(0, 0);
+      }
+    });
+  };
+
+  const enableMoreFeaturesLayout = () => {
+    const blocks = Array.from(document.querySelectorAll(".mf-animation"));
+    if (!blocks.length) return;
+
+    const ro = new ResizeObserver(() => {
+      blocks.forEach((el) => {
+        if (!el.isConnected) return;
+        const portrait = el.querySelector(".mf-animation-portrait");
+        const grid = el.querySelector(".mf-animation-grid");
+        if (!portrait || !grid) return;
+        const gridHeight = grid.getBoundingClientRect().height;
+        if (!Number.isFinite(gridHeight) || gridHeight <= 0) return;
+
+        const portraitHeight = gridHeight;
+        const portraitWidth = (portraitHeight * 9) / 16;
+
+        el.style.setProperty("--mf-animation-portrait-h", `${portraitHeight.toFixed(2)}px`);
+        el.style.setProperty("--mf-animation-portrait-w", `${portraitWidth.toFixed(2)}px`);
+      });
+    });
+
+    blocks.forEach((el) => ro.observe(el));
+  };
+
+  const enableMoreFeaturesAutoFit = () => {
+    const section = document.querySelector(".section-more-features");
+    const grid = document.querySelector(".more-features-grid");
+    if (!section || !grid || !grid.parentElement) return;
+
+    const parent = grid.parentElement;
+    const ro = new ResizeObserver(() => {
+      const availableWidth = parent.clientWidth;
+      const currentScale = parseFloat(getComputedStyle(section).getPropertyValue("--mf-scale")) || 1;
+      const naturalGridWidth = grid.scrollWidth / currentScale;
+      if (!naturalGridWidth || !availableWidth) return;
+
+      const scale = Math.min(1, availableWidth / naturalGridWidth);
+      section.style.setProperty("--mf-scale", scale.toString());
+    });
+
+    ro.observe(parent);
+  };
+
+  const enableTaskAutoFit = () => {
+    const taskSections = document.querySelectorAll(".task-section");
+
+    taskSections.forEach((section) => {
+      const ro = new ResizeObserver(() => {
+        const body = section.querySelector(".task-body");
+        const stack = section.querySelector(".compare-stack");
+        if (!body || !stack) return;
+
+        const containerWidth = section.clientWidth;
+        const currentCompareScale = parseFloat(getComputedStyle(section).getPropertyValue("--compare-scale")) || 1;
+        const scaledStackWidth = stack.scrollWidth;
+        const naturalStackWidth = scaledStackWidth / currentCompareScale;
+
+        let compareScale = 1;
+        if (naturalStackWidth > 0 && containerWidth > 0) {
+          compareScale = containerWidth / (naturalStackWidth + 36);
+          if (compareScale > 1) compareScale = 1;
+        }
+        
+        let scaleChanged = false;
+        if (Math.abs(compareScale - currentCompareScale) > 0.005) {
+          section.style.setProperty("--compare-scale", compareScale.toString());
+          scaleChanged = true;
+        }
+
+        const labels = section.querySelectorAll(".compare-input-title, .video-label");
+
+        labels.forEach((label) => {
+          label.style.setProperty("--fit-scale", "1");
+          const availableWidth = label.clientWidth;
+          const naturalLabelWidth = label.scrollWidth;
+          let fitScale = 1;
+
+          if (availableWidth > 0 && naturalLabelWidth > availableWidth) {
+            // Keep a readable lower bound; below that we fall back to ellipsis.
+            fitScale = Math.max(0.78, availableWidth / naturalLabelWidth);
+          }
+
+          const currentFitScale = parseFloat(getComputedStyle(label).getPropertyValue("--fit-scale")) || 1;
+          if (Math.abs(fitScale - currentFitScale) > 0.005 || scaleChanged) {
+            label.style.setProperty("--fit-scale", fitScale.toString());
+          }
+        });
+      });
+      ro.observe(section);
+    });
+  };
+  const enableGalleryAutoFit = () => {
+    const grid = document.querySelector(".gallery-grid");
+    const strip = document.querySelector(".gallery-strip");
+    if (!grid || !strip) return;
+
+    let naturalStripWidth = 0;
+
+    const ro = new ResizeObserver(() => {
+      if (naturalStripWidth === 0) {
+        // Measure it the first time without any scaling
+        grid.style.setProperty("--gallery-scale", "1");
+        naturalStripWidth = strip.scrollWidth;
+      }
+
+      const containerWidth = grid.clientWidth;
+      if (naturalStripWidth > 0 && containerWidth > 0) {
+        const scale = Math.min(1, containerWidth / naturalStripWidth);
+        grid.style.setProperty("--gallery-scale", scale.toString());
+      }
+    });
+    ro.observe(grid);
+  };
+
+  document.addEventListener("DOMContentLoaded", async () => {
+    try {
+      await hydrateTaskSections();
+    } catch (_) {}
+    enableHeroTeaser();
+    enableHoverControls();
+    enableMediaLightbox();
+    enableLazyAutoplay();
+    enableAutoScrollText();
+    enableInputFade();
+    enableDropdown();
+    enableTopNavResponsive();
+    enableReplayAll();
+    enableNavTypewriter();
+    enableBackToTop();
+    enableMoreFeaturesLayout();
+    enableMoreFeaturesAutoFit();
+    enableGalleryAutoFit();
+    enableTaskAutoFit();
+  });
+})();

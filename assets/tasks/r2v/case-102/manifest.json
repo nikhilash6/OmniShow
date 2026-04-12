@@ -1,0 +1,33 @@
+{
+  "title": "Case 102",
+  "inputs": {
+    "text": "inputs/text.txt",
+    "refs": [
+      "inputs/ref-01.png",
+      "inputs/ref-02.png"
+    ]
+  },
+  "outputs": [
+    {
+      "label": "OmniShow (Ours)",
+      "src": "outputs/ours.mp4",
+      "kind": "ours"
+    },
+    {
+      "label": "VACE",
+      "src": "outputs/baseline-vace.mp4"
+    },
+    {
+      "label": "Phantom-14B",
+      "src": "outputs/baseline-phantom14b.mp4"
+    },
+    {
+      "label": "HunyuanCustom",
+      "src": "outputs/baseline-hunyuancustom.mp4"
+    },
+    {
+      "label": "HuMo-17B",
+      "src": "outputs/baseline-humo17b.mp4"
+    }
+  ]
+}
