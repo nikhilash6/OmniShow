@@ -788,6 +788,64 @@ strong {
   justify-content: center;
 }
 
+.compare-block-placeholder {
+  opacity: 0.96;
+}
+
+.compare-block-placeholder .input-card,
+.compare-block-placeholder .portrait-video,
+.compare-block-placeholder .ref-img,
+.compare-block-placeholder .video-label {
+  overflow: hidden;
+}
+
+.compare-block-error {
+  opacity: 0.7;
+}
+
+.placeholder-block,
+.placeholder-label,
+.placeholder-video,
+.ref-img-placeholder {
+  position: relative;
+  overflow: hidden;
+}
+
+.placeholder-block {
+  width: 100%;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.placeholder-block-text {
+  min-height: 84px;
+}
+
+.placeholder-label {
+  min-height: 16px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.placeholder-video,
+.ref-img-placeholder {
+  background: rgba(255, 255, 255, 0.05);
+}
+
+.placeholder-shimmer {
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(90deg, rgba(255, 255, 255, 0) 0%, rgba(255, 255, 255, 0.11) 50%, rgba(255, 255, 255, 0) 100%);
+  transform: translateX(-100%);
+  animation: placeholderShimmer 1.4s ease-in-out infinite;
+}
+
+@keyframes placeholderShimmer {
+  100% {
+    transform: translateX(100%);
+  }
+}
+
 .compare-block-fullbleed {
   max-width: 2600px;
   width: 100%;
@@ -1077,6 +1135,10 @@ strong {
   background: #0a0a0a;
   transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
   will-change: transform;
+}
+
+.ref-grid-placeholder {
+  flex-wrap: nowrap;
 }
 
 .ref-img:hover {

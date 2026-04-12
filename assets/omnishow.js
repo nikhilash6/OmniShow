@@ -14,13 +14,13 @@
   };
 
   const fetchText = async (url) => {
-    const res = await fetch(url, { cache: "no-cache" });
+    const res = await fetch(url);
     if (!res.ok) throw new Error(`Failed to load: ${url}`);
     return res.text();
   };
 
   const fetchJson = async (url) => {
-    const res = await fetch(url, { cache: "no-cache" });
+    const res = await fetch(url);
     if (!res.ok) throw new Error(`Failed to load: ${url}`);
     return res.json();
   };
@@ -457,6 +457,167 @@
     return block;
   };
 
+  const getInputsLabelQuota = (sectionId) => (sectionId === "rap2v" ? 2 : 1);
+
+  const shouldShowInputsLabelForCase = (sectionId, caseIndex) => caseIndex < getInputsLabelQuota(sectionId);
+
+  const createPlaceholderCard = (className) => {
+    const card = document.createElement("div");
+    card.className = className;
+    const shimmer = document.createElement("div");
+    shimmer.className = "placeholder-shimmer";
+    card.appendChild(shimmer);
+    return card;
+  };
+
+  const createCasePlaceholder = (sectionId, caseName, caseIndex) => {
+    const block = document.createElement("div");
+    block.className = "compare-block compare-block-fullbleed compare-block-placeholder";
+    block.dataset.sectionId = sectionId;
+    block.dataset.caseName = caseName;
+    block.dataset.caseIndex = String(caseIndex);
+
+    const aside = document.createElement("aside");
+    aside.className = "compare-input";
+
+    if (shouldShowInputsLabelForCase(sectionId, caseIndex)) {
+      const title = document.createElement("div");
+      title.className = "compare-input-title";
+      title.textContent = "Inputs";
+      aside.appendChild(title);
+    }
+
+    const textCard = document.createElement("div");
+    textCard.className = "input-card input-card-placeholder";
+    const textLabel = document.createElement("div");
+    textLabel.className = "input-label";
+    textLabel.textContent = "Text";
+    textCard.appendChild(textLabel);
+    textCard.appendChild(createPlaceholderCard("placeholder-block placeholder-block-text"));
+    aside.appendChild(textCard);
+
+    const mediaRow = document.createElement("div");
+    mediaRow.className = "input-row";
+    const refsCard = document.createElement("div");
+    refsCard.className = "input-card input-card-ref input-card-placeholder";
+    const refsLabel = document.createElement("div");
+    refsLabel.className = "input-label";
+    refsLabel.textContent = "Reference Images";
+    refsCard.appendChild(refsLabel);
+    const refsGrid = document.createElement("div");
+    refsGrid.className = "ref-grid ref-grid-placeholder";
+    refsGrid.appendChild(createPlaceholderCard("ref-img ref-img-placeholder"));
+    refsGrid.appendChild(createPlaceholderCard("ref-img ref-img-placeholder"));
+    refsCard.appendChild(refsGrid);
+    mediaRow.appendChild(refsCard);
+
+    const poseCard = document.createElement("div");
+    poseCard.className = "input-card input-card-pose input-card-placeholder";
+    const poseLabel = document.createElement("div");
+    poseLabel.className = "input-label";
+    poseLabel.textContent = "Preview";
+    poseCard.appendChild(poseLabel);
+    poseCard.appendChild(createPlaceholderCard("portrait-video portrait-video-input placeholder-video"));
+    mediaRow.appendChild(poseCard);
+    aside.appendChild(mediaRow);
+
+    const outputWrap = document.createElement("div");
+    outputWrap.className = "compare-output";
+    const outputRow = document.createElement("div");
+    outputRow.className = "output-row";
+
+    for (let i = 0; i < 3; i += 1) {
+      const videoCard = document.createElement("div");
+      videoCard.className = "video-card video-card-placeholder";
+      videoCard.appendChild(createPlaceholderCard("video-label placeholder-label"));
+      videoCard.appendChild(createPlaceholderCard("portrait-video portrait-video-xl placeholder-video"));
+      outputRow.appendChild(videoCard);
+    }
+
+    outputWrap.appendChild(outputRow);
+    block.appendChild(aside);
+    block.appendChild(outputWrap);
+    return block;
+  };
+
+  let lazyCaseObserver = null;
+  const ensureLazyCaseObserver = () => {
+    if (lazyCaseObserver || !("IntersectionObserver" in window)) return lazyCaseObserver;
+    lazyCaseObserver = new IntersectionObserver(
+      (entries) => {
+        entries.forEach((entry) => {
+          if (!entry.isIntersecting) return;
+          const placeholder = entry.target;
+          const load = placeholder && placeholder.__loadCaseBlock;
+          lazyCaseObserver.unobserve(placeholder);
+          if (typeof load === "function") load();
+        });
+      },
+      { rootMargin: "700px 0px", threshold: 0.01 }
+    );
+    return lazyCaseObserver;
+  };
+
+  const registerLazyCaseEntry = (entry, sectionEl) => {
+    if (!entry || !entry.placeholder || entry.block) return;
+    entry.placeholder.__loadCaseBlock = () => hydrateLazyCaseEntry(entry, sectionEl);
+    const observer = ensureLazyCaseObserver();
+    if (observer) observer.observe(entry.placeholder);
+    else hydrateLazyCaseEntry(entry, sectionEl).catch(() => {});
+  };
+
+  const hydrateLazyCaseEntry = async (entry, sectionEl) => {
+    if (!entry || entry.block || entry.hydrating) return;
+    entry.hydrating = true;
+    try {
+      const manifest = await fetchJson(`${TASKS_BASE}${entry.sectionId}/${entry.caseName}/manifest.json`);
+      const block = await renderCaseBlock(
+        entry.sectionId,
+        entry.caseName,
+        manifest,
+        shouldShowInputsLabelForCase(entry.sectionId, entry.caseIndex)
+      );
+      entry.block = block;
+      if (entry.currentEl && entry.currentEl.isConnected) {
+        entry.currentEl.replaceWith(block);
+      }
+      entry.currentEl = block;
+      enableHoverControls(sectionEl);
+      enableLazyAutoplay(sectionEl);
+      enableAutoScrollText(sectionEl);
+      enableInputFade(sectionEl);
+    } catch (_) {
+      if (entry.placeholder && entry.placeholder.isConnected) {
+        entry.placeholder.classList.add("compare-block-error");
+      }
+    } finally {
+      entry.hydrating = false;
+    }
+  };
+
+  const createLazyCaseEntry = (sectionId, caseName, caseIndex) => {
+    const placeholder = createCasePlaceholder(sectionId, caseName, caseIndex);
+    return {
+      sectionId,
+      caseName,
+      caseIndex,
+      placeholder,
+      block: null,
+      currentEl: placeholder,
+      hydrating: false,
+    };
+  };
+
+  const attachEntriesToStack = (stack, entries, beforeEl, sectionEl) => {
+    entries.forEach((entry) => {
+      const node = entry.currentEl || entry.block || entry.placeholder;
+      if (!node) return;
+      stack.insertBefore(node, beforeEl || null);
+      entry.currentEl = node;
+      if (!entry.block) registerLazyCaseEntry(entry, sectionEl);
+    });
+  };
+
   const hydrateTaskSection = async (sectionEl, sections) => {
     if (!sectionEl || sectionEl.dataset.taskHydrated === "true" || sectionEl.dataset.taskHydrating === "true") return;
     sectionEl.dataset.taskHydrating = "true";
@@ -471,7 +632,6 @@
 
     const stack = document.createElement("div");
     stack.className = "compare-stack";
-    let caseCount = 0;
 
     const body = sectionEl.querySelector(".task-body");
     if (!body) {
@@ -482,34 +642,14 @@
     body.appendChild(stack);
     sectionEl.dataset.dynamicRendered = "true";
 
-    const loadAndAppend = async (caseNames, inputsLabelState) => {
-      let shown = !!inputsLabelState;
-      for (let i = 0; i < caseNames.length; i += 1) {
-        const caseName = caseNames[i];
-        try {
-          const manifest = await fetchJson(`${TASKS_BASE}${sectionId}/${caseName}/manifest.json`);
-          const showInputsLabel = sectionId === "rap2v" ? caseCount < 2 : !shown;
-          const block = await renderCaseBlock(sectionId, caseName, manifest, showInputsLabel);
-          stack.appendChild(block);
-          if (showInputsLabel) shown = true;
-          caseCount += 1;
-        } catch (_) {}
-      }
-      enableHoverControls(sectionEl);
-      enableLazyAutoplay(sectionEl);
-      enableAutoScrollText(sectionEl);
-      enableInputFade(sectionEl);
-      return shown;
-    };
-
     const collapseLimit = getCasesCollapseLimit(sectionId);
     const shouldCollapse = cases.length > collapseLimit;
     const firstBatch = shouldCollapse ? cases.slice(0, collapseLimit) : cases;
     const restBatch = shouldCollapse ? cases.slice(collapseLimit) : [];
+    const firstEntries = firstBatch.map((caseName, index) => createLazyCaseEntry(sectionId, caseName, index));
+    attachEntriesToStack(stack, firstEntries, null, sectionEl);
 
-    const inputsLabelShown = await loadAndAppend(firstBatch, false);
-    const initialCount = stack.childElementCount;
-    if (!shouldCollapse || !initialCount) {
+    if (!shouldCollapse || !firstEntries.length) {
       sectionEl.dataset.taskHydrated = "true";
       sectionEl.dataset.taskHydrating = "false";
       return;
@@ -524,64 +664,33 @@
     toggleBtn.setAttribute("aria-expanded", "false");
     toggleWrap.appendChild(toggleBtn);
     stack.appendChild(toggleWrap);
-    const baseCount = stack.childElementCount;
+    const restEntries = restBatch.map((caseName, index) =>
+      createLazyCaseEntry(sectionId, caseName, firstBatch.length + index)
+    );
 
     let expanded = false;
     let busy = false;
-    let restBlocks = null;
 
     const collapse = () => {
-      while (stack.childElementCount > baseCount) {
-        const last = toggleWrap.previousElementSibling;
-        if (!last) break;
-        stack.removeChild(last);
-      }
+      restEntries.forEach((entry) => {
+        const node = entry.currentEl;
+        if (node && node.parentNode === stack) stack.removeChild(node);
+      });
       expanded = false;
       toggleBtn.textContent = "See More";
       toggleBtn.setAttribute("aria-expanded", "false");
     };
 
     const expand = async () => {
-      if (!restBatch.length) return;
+      if (!restEntries.length) return;
       busy = true;
       toggleBtn.disabled = true;
       toggleBtn.textContent = "Loading…";
-
-      if (Array.isArray(restBlocks)) {
-        restBlocks.forEach((b) => stack.insertBefore(b, toggleWrap));
-        restBlocks.forEach((b) => {
-          const vids = Array.from(b.querySelectorAll("video"));
-          vids.forEach((video) => {
-            pauseVideoSafely(video);
-            try {
-              video.currentTime = 0;
-            } catch (_) {}
-          });
-        });
-        enableHoverControls(sectionEl);
-        enableLazyAutoplay(sectionEl);
-        enableAutoScrollText(sectionEl);
-        enableInputFade(sectionEl);
-      } else {
-        restBlocks = [];
-        let shown = inputsLabelShown || stack.childElementCount > 0;
-        for (let i = 0; i < restBatch.length; i += 1) {
-          const caseName = restBatch[i];
-          try {
-            const manifest = await fetchJson(`${TASKS_BASE}${sectionId}/${caseName}/manifest.json`);
-            const showInputsLabel = sectionId === "rap2v" ? caseCount < 2 : !shown;
-            const block = await renderCaseBlock(sectionId, caseName, manifest, showInputsLabel);
-            restBlocks.push(block);
-            stack.insertBefore(block, toggleWrap);
-            if (showInputsLabel) shown = true;
-            caseCount += 1;
-          } catch (_) {}
-        }
-        enableHoverControls(sectionEl);
-        enableLazyAutoplay(sectionEl);
-        enableAutoScrollText(sectionEl);
-        enableInputFade(sectionEl);
-      }
+      attachEntriesToStack(stack, restEntries, toggleWrap, sectionEl);
+      enableHoverControls(sectionEl);
+      enableLazyAutoplay(sectionEl);
+      enableAutoScrollText(sectionEl);
+      enableInputFade(sectionEl);
 
       expanded = true;
       toggleBtn.disabled = false;
