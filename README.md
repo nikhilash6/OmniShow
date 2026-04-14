@@ -27,7 +27,7 @@ Yichen Liu<sup>2</sup>, Xin Gao<sup>2</sup>, Cunjian Chen<sup>3</sup>, Shilei We
 
 <div align="center">
   <a href="http://correr-zhou.github.io/OmniShow"><img src="https://img.shields.io/static/v1?label=Project%20Page&message=Web&color=green"></a> &ensp;
-  <a href="https://arxiv.org/pdf/2604.11804"><img src="https://img.shields.io/static/v1?label=Paper&message=arXiv&color=red"> &ensp;
+  <a href="https://arxiv.org/pdf/2604.11804"><img src="https://img.shields.io/static/v1?label=Paper&message=arXiv&color=red"></a> &ensp;
   <a href="https://github.com/Correr-Zhou/OmniShow"><img src="https://img.shields.io/static/v1?label=Code&message=GitHub&color=blue"></a> &ensp;
   <a href="https://huggingface.co/datasets/donghao-zhou/HOIVG-Bench"><img src="https://img.shields.io/static/v1?label=Benchmark&message=HOIVG-Bench&color=yellow">
 </div>
