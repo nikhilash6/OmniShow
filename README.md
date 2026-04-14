@@ -27,7 +27,7 @@ Yichen Liu<sup>2</sup>, Xin Gao<sup>2</sup>, Cunjian Chen<sup>3</sup>, Shilei We
 
 <div align="center">
   <a href="http://correr-zhou.github.io/OmniShow"><img src="https://img.shields.io/static/v1?label=Project%20Page&message=Web&color=green"></a> &ensp;
-  <img src="https://img.shields.io/static/v1?label=Paper&message=arXiv&color=red"> &ensp;
+  <a href="https://arxiv.org/pdf/2604.11804"><img src="https://img.shields.io/static/v1?label=Paper&message=arXiv&color=red"> &ensp;
   <a href="https://github.com/Correr-Zhou/OmniShow"><img src="https://img.shields.io/static/v1?label=Code&message=GitHub&color=blue"></a> &ensp;
   <a href="https://huggingface.co/datasets/donghao-zhou/HOIVG-Bench"><img src="https://img.shields.io/static/v1?label=Benchmark&message=HOIVG-Bench&color=yellow">
 </div>
@@ -36,7 +36,7 @@ Yichen Liu<sup>2</sup>, Xin Gao<sup>2</sup>, Cunjian Chen<sup>3</sup>, Shilei We
 
 ## 🔥 Updates
 - 2026.04: Code is under internal review. Please stay tuned!
-- 2026.04: The technical report of OmniShow is released!
+- 2026.04: The [technical report of OmniShow](https://arxiv.org/pdf/2604.11804) is released!
 
 
 ## 🌟 Highlights
@@ -120,10 +120,10 @@ OmniShow achieves overall state-of-the-art performance across various multimodal
 If you find this work useful in your research, please cite:
 
 ```bibtex
-@misc{zhou2026omnishow,
+@article{zhou2026omnishow,
   title={OmniShow: Unifying Multimodal Conditions for Human-Object Interaction Video Generation},
   author={Zhou, Donghao and Liu, Guisheng and Yang, Hao and Li, Jiatong and Lin, Jingyu and Huang, Xiaohu and Liu, Yichen and Gao, Xin and Chen, Cunjian and Wen, Shilei and Fu, Chi-Wing and Heng, Pheng-Ann},
-  journal={arXiv preprint},
+  journal={arXiv preprint arXiv:2604.11804},
   year={2026}
 }
 ```
